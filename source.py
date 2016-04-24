@@ -881,13 +881,48 @@ class XMLTVSource(Source):
         fileUpdated = datetime.datetime.fromtimestamp(stat.st_mtime())
         return fileUpdated > channelsLastUpdated
 
-    def parseXMLTVDate(self, dateString):
-        if dateString is not None:
-            if dateString.find(' ') != -1:
-                # remove timezone information
-                dateString = dateString[:dateString.find(' ')]
-            t = time.strptime(dateString, '%Y%m%d%H%M%S')
-            return datetime.datetime(t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec)
+    def parseXMLTVDate(self, origDateString):
+        if origDateString.find(' ') != -1:
+            # get timezone information
+            dateParts = origDateString.split()
+            if len(dateParts) == 2:
+                dateString = dateParts[0]
+                offset = dateParts[1]
+                if len(offset) == 5:
+                    offSign = offset[0]
+                    offHrs = int(offset[1:3])
+                    offMins = int(offset[-2:])
+                    td = datetime.timedelta(minutes=offMins, hours=offHrs)
+                else:
+                    td = datetime.timedelta(seconds=0)
+            elif len(dateParts) == 1:
+                dateString = dateParts[0]
+                td = datetime.timedelta(seconds=0)
+            else:
+                return None
+
+            # normalize the given time to UTC by applying the timedelta provided in the timestamp
+            try:
+                t_tmp = datetime.datetime.strptime(dateString, '%Y%m%d%H%M%S')
+            except TypeError:
+                xbmc.log('[script.ftvguide] strptime error with this date: %s' % dateString, xbmc.LOGDEBUG)
+                t_tmp = datetime.datetime.fromtimestamp(time.mktime(time.strptime(dateString, '%Y%m%d%H%M%S')))
+            if offSign == '+':
+                t = t_tmp - td
+            elif offSign == '-':
+                t = t_tmp + td
+            else:
+                t = t_tmp
+
+            # get the local timezone offset in seconds
+            is_dst = time.daylight and time.localtime().tm_isdst > 0
+            utc_offset = - (time.altzone if is_dst else time.timezone)
+            td_local = datetime.timedelta(seconds=utc_offset)
+
+            t = t + td_local
+
+            return t
+
         else:
             return None
 
